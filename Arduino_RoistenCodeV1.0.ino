@@ -6,67 +6,80 @@
 #include <std_msgs/Float32.h>
 #include <std_msgs/Int16MultiArray.h>
 #include <std_msgs/String.h>
+
 #define  PI 3.14159
 #define numLeds 10
-#define ledPin 42   // 53
+#define ledPin 42                   // 53
 CRGB leds[numLeds];
-//IBUS
+
 IBusBM ibusRC;
 HardwareSerial& ibusRcSerial = Serial1;
 HardwareSerial& debugSerial = Serial;
-// Declare channels
-int channel1 = 0;
+
+int channel1 = 0;                   // Declare channels
 int channel2 = 0;
 int channel3 = 0;
 int channel4 = 0;
 int channel5 = 0;
 int channel8 = 0;
-// Start the node
-ros::NodeHandle nh;
-// d = Wheel diameter
-const float d = 0.25;
-// Variables for right and left velocities
-float velLeft = 0;
+
+ros::NodeHandle nh;                 // Start the node
+
+const float d = 0.25;               // d = Wheel diameter
+
+float velLeft = 0;                  // Variables for right and left velocities
 float velRight = 0;
-// Define HALL pins
-const int leftMotor = 6;
+
+const int leftMotor = 6;            // Define HALL pins
 const int rightMotor = 7;
-// Define HALL pins
-const int hallRightPin1 = A8;   // 51
-const int hallRightPin2 = A9;   // 49
-const int hallRightPin3 = A10;  // 47
+const int hallRightPin1 = A8;       // 51
+const int hallRightPin2 = A9;       // 49
+const int hallRightPin3 = A10;      // 47
 const int hallLeftPin1 = A7;
 const int hallLeftPin2 = A6;
 const int hallLeftPin3 = A5;
-// Define braking pins
-const int rightBrake = 2;
+
+const int rightBrake = 2;           // Define braking pins
 const int leftBrake = 3;
-// Define reversing pins
-const int rightReverse = A0;
+
+const int rightReverse = A0;        // Define reversing pins
 const int leftReverse = A1;
-// Adding a limit to our output
-const float maxSpeed = 0.2;
-bool reached = false;
+
+const float maxSpeed = 0.3;         // Adding a limit to our output
+
+bool reached = false;               // LiDAR obstacle
+bool camera_reached = false;        // Camera obstacle
+
 float left_speed = 0.0;
 float right_speed = 0.0;
+
 void LeftVel(const std_msgs::Float32& value)
 {
   left_speed = value.data;
 }
+
 void RightVel(const std_msgs::Float32& value)
 {
   right_speed = value.data;
 }
+
 void LidarCallback(const std_msgs::Bool& value)
 {
   reached = value.data;
 }
-void CmdVelCallback( const geometry_msgs::Twist& velocity)
+
+void CameraCallback(const std_msgs::Bool& value)
+{
+  camera_reached = value.data;
+}
+
+void CmdVelCallback(const geometry_msgs::Twist& velocity)
 {
   velLeft = left_speed;
   velRight = right_speed;
   //velLeft = velocity.linear.x - d * velocity.angular.z;
   //velRight = velocity.linear.x + d * velocity.angular.z;
+
   // Reverse and brake logic
   if (velRight < 0.0)
   {
@@ -76,6 +89,7 @@ void CmdVelCallback( const geometry_msgs::Twist& velocity)
   {
     digitalWrite(rightReverse, HIGH);
   }
+
   if (velLeft < 0.0)
   {
     velLeft = velLeft * (-1);
@@ -84,15 +98,16 @@ void CmdVelCallback( const geometry_msgs::Twist& velocity)
   {
     digitalWrite(leftReverse, HIGH);
   }
-  BrakeLogic(velRight,velLeft);
 
+  BrakeLogic(velRight,velLeft);
   // Outputing the channels to ESC
 }
 
 std_msgs::String str_msg;
-// Subscriber
+// Subscribers
 ros::Subscriber<geometry_msgs::Twist> sub("cmd_vel" , CmdVelCallback);
 ros::Subscriber<std_msgs::Bool> lidar("obj_detection", LidarCallback);
+ros::Subscriber<std_msgs::Bool> camera("camera_obj_detection", CameraCallback);
 ros::Subscriber<std_msgs::Float32> left_vel("Left_vel", LeftVel);
 ros::Subscriber<std_msgs::Float32> right_vel("Right_vel", RightVel);
 ros::Publisher chatter("chatter", &str_msg);
@@ -111,13 +126,22 @@ void RemoteControl(float left, float right)
   {
     analogWrite(leftMotor, left * maxSpeed);
     analogWrite(rightMotor, right * maxSpeed);
-    if (reached)
+    // if (reached)
+    // {
+    //   Leds(1);
+    //   //BrakeLogic(0.0, 0.0);
+    // }else
+    // {
+    //   BrakeLogic(0.1, 0.1);
+    //   Leds(3);
+    // }
+    if (camera_reached)
     {
       Leds(1);
-      //BrakeLogic(0.0, 0.0);
+      // BrakeLogic(0.0, 0.0);
     }else
     {
-      BrakeLogic(0.1, 0.1);
+      // BrakeLogic(0.1, 0.1);
       Leds(3);
     }
   // 0 = Neutral
@@ -131,7 +155,7 @@ void RemoteControl(float left, float right)
   {
     velLeft = channel2 + channel1+1;
     velRight = channel2 - channel1+1;
-    //problem, engine kaput, channel 5: -100 = puldi reziim, 100 = teleop/serial reziim
+
     if (velRight < 0.0)
     {
       velRight = velRight * (-1);
@@ -149,6 +173,7 @@ void RemoteControl(float left, float right)
       digitalWrite(leftReverse,HIGH);
     }
     BrakeLogic(velRight,velLeft);
+
     // Outputing the channels to ESC
     analogWrite(leftMotor, velLeft * maxSpeed);
     analogWrite(rightMotor, velRight * maxSpeed);
@@ -177,6 +202,7 @@ void setup()
   nh.initNode();
   nh.subscribe(sub);
   nh.subscribe(lidar);
+  nh.subscribe(camera);
   nh.subscribe(left_vel);
   nh.subscribe(right_vel);
   nh.advertise(chatter);
@@ -184,6 +210,7 @@ void setup()
   debugSerial.begin(57600);
   ibusRC.begin(ibusRcSerial);
 }
+
 // Reading the channels
 int readChannel(byte channelInput, int minLimit, int maxLimit, int defaultValue)
 {
